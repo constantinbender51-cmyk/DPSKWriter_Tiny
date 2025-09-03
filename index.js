@@ -105,26 +105,27 @@ Beyond identification, The Fungal Kingdom delves into the cultural history of mu
         <div id="link"></div>
 
         <script>
-          document.getElementById('genForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            document.getElementById('spinner').style.display = 'inline';
-            document.getElementById('link').innerHTML = '';
-            const overview = new FormData(e.target).get('overview');
-            const res = await fetch('/generate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ overview })
-            });
-            document.getElementById('spinner').style.display = 'none';
-            if (res.ok) {
-              const { slug } = await res.json();
-              document.getElementById('link').innerHTML =
-                \`<a href="/download/${slug}.md">Download ${slug}.md</a>\`;
-            } else {
-              document.getElementById('link').innerText = 'Error generating content.';
-            }
-          });
-        </script>
+  document.getElementById('genForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    document.getElementById('spinner').style.display = 'inline';
+    document.getElementById('link').innerHTML = '';
+    const overview = new FormData(e.target).get('overview');
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overview })
+    });
+    document.getElementById('spinner').style.display = 'none';
+    if (res.ok) {
+      const data = await res.json();          // data.slug is now defined
+      const slug = data.slug;
+      document.getElementById('link').innerHTML =
+        '<a href="/download/' + slug + '.md">Download ' + slug + '.md</a>';
+    } else {
+      document.getElementById('link').innerText = 'Error generating content.';
+    }
+  });
+</script>
       </body>
     </html>
   `);
