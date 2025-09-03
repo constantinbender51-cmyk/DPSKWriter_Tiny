@@ -202,28 +202,28 @@ app.post('/generate-book', async (req, res) => {
 
 // Download routes
 app.get('/download/:filename', async (req, res) => {
-  const fn = req.params.filename;
-  const slug = fn.replace(/\.(md|json)$/, '');
-  let content, contentType, name;
+  const fn   = req.params.filename;
+  let key, mime, name;
 
   if (fn.endsWith('-outline.json')) {
-    content = await client.get(`book-outline:${slug}`);
-    contentType = 'application/json';
-    name = `${slug}-outline.json`;
+    key  = `book-outline:${fn.replace('-outline.json', '')}`;
+    mime = 'application/json';
+    name = fn;
   } else if (fn.endsWith('-overview.md')) {
-    content = await client.get(`book-overview:${slug}`);
-    contentType = 'text/markdown';
-    name = `${slug}-overview.md`;
+    key  = `book-overview:${fn.replace('-overview.md', '')}`;
+    mime = 'text/markdown';
+    name = fn;
   } else {
-    content = await client.get(`book-full:${slug}`);
-    contentType = 'text/markdown';
-    name = `${slug}.md`;
+    key  = `book-full:${fn.replace('.md', '')}`;
+    mime = 'text/markdown';
+    name = fn;
   }
 
-  if (!content) return res.status(404).send('Not found');
-  res.set('Content-Type', contentType);
+  const buf = await client.get(key);
+  if (!buf) return res.status(404).send(`Key "${key}" not found`);
+  res.set('Content-Type', mime);
   res.set('Content-Disposition', `attachment; filename="${name}"`);
-  res.send(content);
+  res.send(buf);
 });
 
 // Original generate endpoint (unchanged)
