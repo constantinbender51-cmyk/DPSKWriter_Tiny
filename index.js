@@ -421,7 +421,7 @@ function buildKeywordPage() {
   }).then(r => r.json());
 
   // 2. Listen to progress
-  const source = new EventSource(`/progress/${progressId}`);
+  const source = new EventSource('/progress/' + progressId);
   source.onmessage = (ev) => {
     const { done, total } = JSON.parse(ev.data);
     const pct = Math.round((done / total) * 100);
