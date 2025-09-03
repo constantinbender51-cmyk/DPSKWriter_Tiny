@@ -244,6 +244,73 @@ app.post('/generate', async (req, res) => {
   res.json({ slug });
 });
 
+/* ---------- NEW: Redis browser route ---------- */
+app.get('/redis', async (_req, res) => {
+  const keys = await client.keys('*');          // get every key
+  const rows = await Promise.all(
+    keys.map(async k => {
+      const raw = await client.get(k);
+      const preview = (raw || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 120) + (raw?.length > 120 ? '…' : '');
+      return { key: k, preview };
+    })
+  );
+  res.send(buildRedisPage(rows));
+});
+
+/* ---------- NEW: delete a single key ---------- */
+app.delete('/redis/:key', async (req, res) => {
+  await client.del(decodeURIComponent(req.params.key));
+  res.sendStatus(204);
+});
+
+/* ---------- NEW: HTML for the browser ---------- */
+function buildRedisPage(rows) {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Redis Browser</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 900px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: .5rem; border: 1px solid #ccc; text-align: left; }
+      th { background: #f6f6f6; }
+      .preview { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      button { padding: .25rem .5rem; font-size: .8rem; }
+      #empty { color: #666; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <h1>All Redis Variables</h1>
+    <p><a href="/">← Back to generators</a></p>
+    ${rows.length === 0
+      ? '<p id="empty">No keys found.</p>'
+      : `<table>
+          <thead>
+            <tr><th>Key</th><th>Preview</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td><code>${escapeHtml(r.key)}</code></td>
+                <td class="preview">${escapeHtml(r.preview)}</td>
+                <td><button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`}
+    <script>
+      async function del(key, btn) {
+        if (!confirm('Delete this key?')) return;
+        await fetch('/redis/' + key, { method: 'DELETE' });
+        btn.closest('tr').remove();
+      }
+    </script>
+  </body>
+</html>`;
+}
+
 /* ---------- HTML builders ---------- */
 function buildUniversalPage() {
   return `<!doctype html>
