@@ -320,6 +320,28 @@ function buildKeywordPage() {
       button { padding: .75rem 1.5rem; margin-top: 1rem; }
       #spinner { display: none; }
       #downloads { margin-top: 1rem; font-weight: bold; }
+      #progressBox {
+        margin-top: 1rem;
+        display: none;
+      }
+      #progressBar {
+        width: 100%;
+        background: #eee;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 12px;
+      }
+      #progressFill {
+        height: 100%;
+        background: #4CAF50;
+        width: 0%;
+        transition: width .3s;
+      }
+      #progressText {
+        margin-top: .25rem;
+        font-size: .9rem;
+        color: #555;
+      }
     </style>
   </head>
   <body>
@@ -334,6 +356,12 @@ function buildKeywordPage() {
       <button type="submit">Generate book</button>
       <span id="spinner">⏳ Creating…</span>
     </form>
+
+    <div id="progressBox">
+      <div id="progressBar"><div id="progressFill"></div></div>
+      <div id="progressText">0 %</div>
+    </div>
+
     <div id="downloads"></div>
     <hr>
     <p><a href="/">← Back to universal generator</a></p>
@@ -341,31 +369,64 @@ function buildKeywordPage() {
     <script>
       document.getElementById('kwForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const fd = new FormData(e.target);
+        const keywords = fd.get('keywords');
+        const chapters = parseInt(fd.get('chapters'), 10);
+
+        // UI reset
         document.getElementById('spinner').style.display = 'inline';
         document.getElementById('downloads').innerHTML = '';
-        const fd = new FormData(e.target);
-        const payload = {
-          keywords: fd.get('keywords'),
-          chapters: fd.get('chapters')
-        };
-        const res = await fetch('/generate-book', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        document.getElementById('spinner').style.display = 'none';
-        if (res.ok) {
-          const { slug } = await res.json();
-          const d = document.getElementById('downloads');
-          d.innerHTML =
-            '<p>Ready! Download:</p>' +
-            '<ul>' +
-            '<li><a href="/download/' + slug + '.md">Full book (' + slug + '.md)</a></li>' +
-            '<li><a href="/download/' + slug + '-overview.md">Overview only</a></li>' +
-            '<li><a href="/download/' + slug + '-outline.json">Raw outline (JSON)</a></li>' +
-            '</ul>';
-        } else {
-          document.getElementById('downloads').innerText = 'Generation failed – try again.';
+        const box   = document.getElementById('progressBox');
+        const fill  = document.getElementById('progressFill');
+        const text  = document.getElementById('progressText');
+        box.style.display = 'block';
+        fill.style.width = '0%';
+        text.innerText = '0 %';
+
+        // 4 steps: overview, outline, N chapters, assemble
+        const totalSteps = 3 + chapters;
+        let done = 0;
+
+        function tick() {
+          done++;
+          const pct = Math.round((done / totalSteps) * 100);
+          fill.style.width = pct + '%';
+          text.innerText = pct + ' %';
+        }
+
+        // Fire-and-forget progress pings
+        (async () => {
+          const res = await fetch('/generate-book', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keywords, chapters })
+          });
+          document.getElementById('spinner').style.display = 'none';
+          if (res.ok) {
+            const { slug } = await res.json();
+            const d = document.getElementById('downloads');
+            d.innerHTML =
+              '<p>Ready! Download:</p>' +
+              '<ul>' +
+              '<li><a href="/download/' + slug + '.md">Full book (' + slug + '.md)</a></li>' +
+              '<li><a href="/download/' + slug + '-overview.md">Overview only</a></li>' +
+              '<li><a href="/download/' + slug + '-outline.json">Raw outline (JSON)</a></li>' +
+              '</ul>';
+          } else {
+            document.getElementById('downloads').innerText = 'Generation failed – try again.';
+          }
+          box.style.display = 'none';
+        })();
+
+        // Rough timing simulation (optional but feels nicer)
+        const steps = [
+          800,        // overview
+          800,        // outline
+          ...Array(chapters).fill(4000 / chapters) // chapters
+        ];
+        for (const ms of steps) {
+          await new Promise(r => setTimeout(r, ms));
+          tick();
         }
       });
     </script>
