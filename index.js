@@ -3,6 +3,8 @@ const express = require('express');
 const axios = require('axios');
 const redis = require('redis');
 const slugify = require('slugify');
+const crypto = require('crypto');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -161,32 +163,45 @@ app.get('/book-from-keywords', (_req, res) => {
   res.send(buildKeywordPage());
 });
 
-// NEW: generate full book endpoint
+// ---------- PATCH /generate-book ----------
 app.post('/generate-book', async (req, res) => {
   const { keywords, chapters } = req.body;
   if (!keywords || !chapters) return res.status(400).json({ error: 'keywords and chapters required' });
   const chapterCount = parseInt(chapters, 10);
   if (chapterCount < 3 || chapterCount > 15) return res.status(400).json({ error: 'chapters must be 3-15' });
 
+  const progressId = crypto.randomUUID();   // unique for this run
+  const totalSteps = 3 + chapterCount;      // overview, outline, N chapters, assembly
+
+  let done = 0;
+  const tick = () => sendProgress(progressId, ++done, totalSteps);
+
   // 1. Overview
   const overview = await generateBookOverview(keywords);
   if (!overview) return res.status(503).json({ error: 'Overview generation failed' });
+  tick();
 
   // 2. Outline
   const outline = await generateChapterOutline(overview, chapterCount);
   if (!outline) return res.status(503).json({ error: 'Outline generation failed' });
+  tick();
 
-  // 3. Chapters (parallel)
-  const chapterPromises = outline.map((ch, i) => generateChapter(overview, ch, i + 1, chapterCount));
-  const chaptersRaw = await Promise.all(chapterPromises);
-  if (chaptersRaw.some(c => !c)) return res.status(503).json({ error: 'One or more chapters failed' });
+  // 3. Chapters (serially so we can count them)
+  const chaptersRaw = [];
+  for (let i = 0; i < outline.length; i++) {
+    const ch = await generateChapter(overview, outline[i], i + 1, chapterCount);
+    if (!ch) return res.status(503).json({ error: `Chapter ${i + 1} failed` });
+    chaptersRaw.push(ch);
+    tick();
+  }
 
-  // 4. Assemble book
+  // 4. Assemble
   const assembled = [`# ${outline[0].title.split(' – ')[0] || 'Untitled Book'}\n\n## Overview\n\n${overview}\n\n`];
   outline.forEach((meta, i) => {
     assembled.push(`\n---\n\n# Chapter ${i + 1}: ${meta.title}\n\n*${meta.synopsis}*\n\n${chaptersRaw[i]}`);
   });
   const fullBook = assembled.join('\n');
+  tick(); // assembly step
 
   // 5. Slug & store
   const slug = slugify(
@@ -197,7 +212,7 @@ app.post('/generate-book', async (req, res) => {
   await client.set(`book-outline:${slug}`, JSON.stringify(outline));
   await client.set(`book-full:${slug}`, fullBook);
 
-  res.json({ slug });
+  res.json({ slug, progressId }); // we also return progressId so the page can listen
 });
 
 // Download routes
@@ -243,7 +258,24 @@ app.post('/generate', async (req, res) => {
   await client.set(`content:${slug}`, content);
   res.json({ slug });
 });
+// ---------- NEW SSE endpoint ----------
+app.get('/progress/:id', (req, res) => {
+  res.setHeader('Content-Type',  'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection',    'keep-alive');
+  res.flushHeaders();
 
+  const id = req.params.id;
+  const listener = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  client.on(`progress:${id}`, listener);
+
+  req.on('close', () => client.off(`progress:${id}`, listener));
+});
+
+// ---------- NEW helper: send progress ----------
+function sendProgress(id, done, total) {
+  client.publish(`progress:${id}`, JSON.stringify({ done, total }));
+}  
 /* ---------- HTML builders ---------- */
 function buildUniversalPage() {
   return `<!doctype html>
@@ -366,57 +398,50 @@ function buildKeywordPage() {
     <hr>
     <p><a href="/">← Back to universal generator</a></p>
 
-    <script>
-      document.getElementById('kwForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        const keywords = fd.get('keywords');
-        const chapters = parseInt(fd.get('chapters'), 10);
+    <script>document.getElementById('kwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const keywords = fd.get('keywords');
+  const chapters = parseInt(fd.get('chapters'), 10);
 
-        // UI reset
-        document.getElementById('spinner').style.display = 'inline';
-        document.getElementById('downloads').innerHTML = '';
-        const box   = document.getElementById('progressBox');
-        const fill  = document.getElementById('progressFill');
-        const text  = document.getElementById('progressText');
-        box.style.display = 'block';
-        fill.style.width = '0%';
-        text.innerText = '0 %';
+  document.getElementById('spinner').style.display = 'inline';
+  document.getElementById('downloads').innerHTML = '';
+  const box   = document.getElementById('progressBox');
+  const fill  = document.getElementById('progressFill');
+  const text  = document.getElementById('progressText');
+  box.style.display = 'block';
+  fill.style.width = '0%';
+  text.innerText = '0 %';
 
-        // 4 steps: overview, outline, N chapters, assemble
-        const totalSteps = 3 + chapters;
-        let done = 0;
+  // 1. Kick off generation
+  const { slug, progressId } = await fetch('/generate-book', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keywords, chapters })
+  }).then(r => r.json());
 
-        function tick() {
-          done++;
-          const pct = Math.round((done / totalSteps) * 100);
-          fill.style.width = pct + '%';
-          text.innerText = pct + ' %';
-        }
+  // 2. Listen to progress
+  const source = new EventSource(`/progress/${progressId}`);
+  source.onmessage = (ev) => {
+    const { done, total } = JSON.parse(ev.data);
+    const pct = Math.round((done / total) * 100);
+    fill.style.width = pct + '%';
+    text.innerText = pct + ' %';
+    if (done === total) {
+      source.close();
+      document.getElementById('spinner').style.display = 'none';
+      box.style.display = 'none';
+      document.getElementById('downloads').innerHTML =
+        '<p>Ready! Download:</p>' +
+        '<ul>' +
+        '<li><a href="/download/' + slug + '.md">Full book (' + slug + '.md)</a></li>' +
+        '<li><a href="/download/' + slug + '-overview.md">Overview only</a></li>' +
+        '<li><a href="/download/' + slug + '-outline.json">Raw outline (JSON)</a></li>' +
+        '</ul>';
+    }
+  };
+});
 
-        // Fire-and-forget progress pings
-        (async () => {
-          const res = await fetch('/generate-book', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keywords, chapters })
-          });
-          document.getElementById('spinner').style.display = 'none';
-          if (res.ok) {
-            const { slug } = await res.json();
-            const d = document.getElementById('downloads');
-            d.innerHTML =
-              '<p>Ready! Download:</p>' +
-              '<ul>' +
-              '<li><a href="/download/' + slug + '.md">Full book (' + slug + '.md)</a></li>' +
-              '<li><a href="/download/' + slug + '-overview.md">Overview only</a></li>' +
-              '<li><a href="/download/' + slug + '-outline.json">Raw outline (JSON)</a></li>' +
-              '</ul>';
-          } else {
-            document.getElementById('downloads').innerText = 'Generation failed – try again.';
-          }
-          box.style.display = 'none';
-        })();
 
         // Rough timing simulation (optional but feels nicer)
         const steps = [
