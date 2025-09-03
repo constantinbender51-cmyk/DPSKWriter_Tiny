@@ -297,6 +297,7 @@ function buildRedisPage(rows) {
                 <td><code>${escapeHtml(r.key)}</code></td>
                 <td class="preview">${escapeHtml(r.preview)}</td>
                 <td>
+                  <button onclick="downloadKey('${encodeURIComponent(r.key)}')">Download</button>
                   <button onclick="openKey('${encodeURIComponent(r.key)}')">Open</button>
                   <button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button>
                 </td>
@@ -305,6 +306,9 @@ function buildRedisPage(rows) {
         </table>`}
     <script>
       function openKey(key) {
+        window.open('/redis/raw/' + key, '_blank');
+      }
+      function downloadKey(key) {
         window.open('/redis/raw/' + key, '_blank');
       }
       async function del(key, btn) {
