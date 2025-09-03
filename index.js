@@ -202,32 +202,26 @@ app.post('/generate-book', async (req, res) => {
 
 // Download routes
 app.get('/download/:filename', async (req, res) => {
-  const filename = req.params.filename;
+  const fn = req.params.filename;
+  const slug = fn.replace(/\.(md|json)$/, '');
+  let content, contentType, name;
 
-  let key, mime, name;
-
-  if (filename.endsWith('-outline.json')) {
-    const slug = filename.replace('-outline.json', '');
-    key   = `book-outline:${slug}`;
-    mime  = 'application/json';
-    name  = `${slug}-outline.json`;
-  } else if (filename.endsWith('-overview.md')) {
-    const slug = filename.replace('-overview.md', '');
-    key   = `book-overview:${slug}`;
-    mime  = 'text/markdown';
-    name  = `${slug}-overview.md`;
-  } else if (filename.endsWith('.md')) {
-    const slug = filename.replace('.md', '');
-    key   = `book-full:${slug}`;
-    mime  = 'text/markdown';
-    name  = `${slug}.md`;
+  if (fn.endsWith('-outline.json')) {
+    content = await client.get(`book-outline:${slug}`);
+    contentType = 'application/json';
+    name = `${slug}-outline.json`;
+  } else if (fn.endsWith('-overview.md')) {
+    content = await client.get(`book-overview:${slug}`);
+    contentType = 'text/markdown';
+    name = `${slug}-overview.md`;
   } else {
-    return res.status(404).send('Unsupported file type');
+    content = await client.get(`book-full:${slug}`);
+    contentType = 'text/markdown';
+    name = `${slug}.md`;
   }
 
-  const content = await client.get(key);
-  if (!content) return res.status(404).send(`Key "${key}" not found`);
-  res.set('Content-Type', mime);
+  if (!content) return res.status(404).send('Not found');
+  res.set('Content-Type', contentType);
   res.set('Content-Disposition', `attachment; filename="${name}"`);
   res.send(content);
 });
