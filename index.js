@@ -273,12 +273,12 @@ function buildRedisPage(rows) {
     <meta charset="utf-8"/>
     <title>Redis Browser</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 950px; }
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 900px; }
       table { width: 100%; border-collapse: collapse; }
       th, td { padding: .5rem; border: 1px solid #ccc; text-align: left; }
       th { background: #f6f6f6; }
-      .preview { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .actions button { margin-right: .25rem; font-size: .8rem; padding: .25rem .5rem; }
+      .preview { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      button { padding: .25rem .5rem; font-size: .8rem; margin-right: .25rem; }
       #empty { color: #666; font-style: italic; }
     </style>
   </head>
@@ -289,52 +289,18 @@ function buildRedisPage(rows) {
       ? '<p id="empty">No keys found.</p>'
       : `<table>
           <thead>
-            <tr>
-              <th>Key</th>
-              <th>Preview</th>
-              <th>View</th>
-              <th>Download</th>
-              <th>Delete</th>
-            </tr>
+            <tr><th>Key</th><th>Preview</th><th>Action</th></tr>
           </thead>
           <tbody>
-            ${rows.map(r => {
-               const slug = r.key.replace(/^(book-|overview:|content:)/, '').replace(/^book-overview:|^book-outline:|^book-full:/, '');
-               const isBook = r.key.startsWith('book-');
-               const isOverview = r.key.startsWith('overview:') || r.key.startsWith('book-overview:');
-               const isOutline = r.key.startsWith('book-outline:');
-               const isFullBook = r.key.startsWith('book-full:');
-               const ext = isOutline ? 'json' : 'md';
-               let dlLinks = '';
-               if (isBook) {
-                 dlLinks = `
-                   <a href="/download/${slug}.md">full</a>
-                   <a href="/download/${slug}-overview.md">overview</a>
-                   <a href="/download/${slug}-outline.json">outline</a>`;
-               } else if (isFullBook) {
-                 dlLinks = `<a href="/download/${slug}.md">full</a>`;
-               } else if (isOverview) {
-                 dlLinks = `<a href="/download/${slug}-overview.md">overview</a>`;
-               } else if (isOutline) {
-                 dlLinks = `<a href="/download/${slug}-outline.json">outline</a>`;
-               } else {
-                 dlLinks = `<a href="/download/${slug}.md">download</a>`;
-               }
-               return `
-               <tr>
-                 <td><code>${escapeHtml(r.key)}</code></td>
-                 <td class="preview">${escapeHtml(r.preview)}</td>
-                 <td class="actions">
-                   <button onclick="openKey('${encodeURIComponent(r.key)}')">Open</button>
-                 </td>
-                 <td class="actions">
-                   ${dlLinks}
-                 </td>
-                 <td class="actions">
-                   <button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button>
-                 </td>
-               </tr>`;
-            }).join('')}
+            ${rows.map(r => `
+              <tr>
+                <td><code>${escapeHtml(r.key)}</code></td>
+                <td class="preview">${escapeHtml(r.preview)}</td>
+                <td>
+                  <button onclick="openKey('${encodeURIComponent(r.key)}')">Open</button>
+                  <button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button>
+                </td>
+              </tr>`).join('')}
           </tbody>
         </table>`}
     <script>
