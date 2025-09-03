@@ -265,7 +265,7 @@ app.delete('/redis/:key', async (req, res) => {
   res.sendStatus(204);
 });
 
-/* ---------- NEW: HTML for the browser ---------- */
+/* ---------- only the buildRedisPage function changes ---------- */
 function buildRedisPage(rows) {
   return `<!doctype html>
 <html>
@@ -278,7 +278,7 @@ function buildRedisPage(rows) {
       th, td { padding: .5rem; border: 1px solid #ccc; text-align: left; }
       th { background: #f6f6f6; }
       .preview { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      button { padding: .25rem .5rem; font-size: .8rem; }
+      button { padding: .25rem .5rem; font-size: .8rem; margin-right: .25rem; }
       #empty { color: #666; font-style: italic; }
     </style>
   </head>
@@ -296,11 +296,17 @@ function buildRedisPage(rows) {
               <tr>
                 <td><code>${escapeHtml(r.key)}</code></td>
                 <td class="preview">${escapeHtml(r.preview)}</td>
-                <td><button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button></td>
+                <td>
+                  <button onclick="openKey('${encodeURIComponent(r.key)}')">Open</button>
+                  <button onclick="del('${encodeURIComponent(r.key)}', this)">Delete</button>
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>`}
     <script>
+      function openKey(key) {
+        window.open('/redis/raw/' + key, '_blank');
+      }
       async function del(key, btn) {
         if (!confirm('Delete this key?')) return;
         await fetch('/redis/' + key, { method: 'DELETE' });
@@ -310,6 +316,15 @@ function buildRedisPage(rows) {
   </body>
 </html>`;
 }
+
+/* ---------- NEW: raw value route ---------- */
+app.get('/redis/raw/:key', async (req, res) => {
+  const key = decodeURIComponent(req.params.key);
+  const raw  = await client.get(key);
+  if (raw === null) return res.status(404).send('Key not found');
+  res.type('text/plain; charset=utf-8');
+  res.send(raw);
+});
 
 /* ---------- HTML builders ---------- */
 function buildUniversalPage() {
