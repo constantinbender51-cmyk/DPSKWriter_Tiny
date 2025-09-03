@@ -305,18 +305,24 @@ function buildRedisPage(rows) {
           </tbody>
         </table>`}
     <script>
-      function openKey(key) {
-        window.open('/redis/raw/' + key, '_blank');
-      }
-      function downloadKey(key) {
-        window.open('/redis/raw/' + key, '_blank');
-      }
-      async function del(key, btn) {
-        if (!confirm('Delete this key?')) return;
-        await fetch('/redis/' + key, { method: 'DELETE' });
-        btn.closest('tr').remove();
-      }
-    </script>
+  function openKey(key) {
+    window.open('/redis/raw/' + key, '_blank');
+  }
+  function downloadKey(key) {
+    const a = document.createElement('a');
+    a.href = '/redis/raw/' + key;
+    a.download = decodeURIComponent(key) + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  async function del(key, btn) {
+    if (!confirm('Delete this key?')) return;
+    await fetch('/redis/' + key, { method: 'DELETE' });
+    btn.closest('tr').remove();
+  }
+</script>
+
   </body>
 </html>`;
 }
