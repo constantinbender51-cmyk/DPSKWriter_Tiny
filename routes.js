@@ -31,46 +31,61 @@ function setupRoutes(app, client) {
     res.send(buildKeywordPage());
   });
 
-  // NEW: generate full book endpoint
-  app.post('/generate-book', async (req, res) => {
-    const { keywords, chapters } = req.body;
-    if (!keywords || !chapters) {
-      return res.status(400).json({ error: 'keywords and chapters required' });
+  // NEW: generate book overview endpoint
+  app.post('/generate-book-overview', async (req, res) => {
+    const { keywords } = req.body;
+    if (!keywords) {
+      return res.status(400).json({ error: 'keywords required' });
     }
-    const chapterCount = parseInt(chapters, 10);
-    if (chapterCount < 3 || chapterCount > 15) {
-      return res.status(400).json({ error: 'chapters must be 3-15' });
-    }
-
-    // 1. Overview
     const overview = await generateBookOverview(keywords);
     if (!overview) {
       return res.status(503).json({ error: 'Overview generation failed' });
     }
+    res.json({ overview });
+  });
 
-    // 2. Outline
+  // NEW: generate book outline endpoint
+  app.post('/generate-book-outline', async (req, res) => {
+    const { overview, chapters } = req.body;
+    const chapterCount = parseInt(chapters, 10);
+    if (!overview || !chapterCount) {
+      return res.status(400).json({ error: 'overview and chapters required' });
+    }
     const outline = await generateChapterOutline(overview, chapterCount);
     if (!outline) {
       return res.status(503).json({ error: 'Outline generation failed' });
     }
+    res.json({ outline });
+  });
 
-    // 3. Chapters (parallel)
-    const chapterPromises = outline.map((ch, i) =>
-      generateChapter(overview, ch, i + 1, chapterCount)
-    );
-    const chaptersRaw = await Promise.all(chapterPromises);
-    if (chaptersRaw.some(c => !c)) {
-      return res.status(503).json({ error: 'One or more chapters failed' });
+  // NEW: generate single chapter endpoint
+  app.post('/generate-chapter', async (req, res) => {
+    const { overview, chapterMeta, idx, total } = req.body;
+    if (!overview || !chapterMeta || !idx || !total) {
+      return res.status(400).json({ error: 'missing required fields' });
+    }
+    const content = await generateChapter(overview, chapterMeta, idx, total);
+    if (!content) {
+      return res.status(503).json({ error: 'Chapter generation failed' });
+    }
+    res.json({ content });
+  });
+
+  // NEW: assemble and store the final book endpoint
+  app.post('/assemble-book', async (req, res) => {
+    const { overview, outline, chaptersRaw, keywords } = req.body;
+    if (!overview || !outline || !chaptersRaw) {
+      return res.status(400).json({ error: 'missing required fields' });
     }
 
-    // 4. Assemble book
+    // 1. Assemble book
     const assembled = [`# ${outline[0].title.split(' – ')[0] || 'Untitled Book'}\n\n## Overview\n\n${overview}\n\n`];
     outline.forEach((meta, i) => {
       assembled.push(`\n---\n\n# Chapter ${i + 1}: ${meta.title}\n\n*${meta.synopsis}*\n\n${chaptersRaw[i]}`);
     });
     const fullBook = assembled.join('\n');
 
-    // 5. Slug & store
+    // 2. Slug & store
     const slug = slugify(
       outline[0].title.split(' – ')[0] || keywords.split(',')[0].trim(),
       { lower: true, strict: true }
