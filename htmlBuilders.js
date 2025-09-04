@@ -2,7 +2,7 @@
  * All functions related to building HTML pages.
  * @module htmlBuilders
  */
-const escapeHtml = require('./utils');
+//const escapeHtml = require('./utils');
 
 /**
  * A utility function to escape HTML special characters in a string.
