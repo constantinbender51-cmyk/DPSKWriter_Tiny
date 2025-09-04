@@ -5,6 +5,25 @@
 const escapeHtml = require('./utils');
 
 /**
+ * A utility function to escape HTML special characters in a string.
+ * This is crucial for preventing Cross-Site Scripting (XSS) vulnerabilities
+ * when rendering user-generated or dynamic content.
+ *
+ * @param {string} unsafeString The string that may contain special HTML characters.
+ * @returns {string} The safely escaped string.
+ */
+function escapeHtml(unsafeString) {
+  if (typeof unsafeString !== 'string') {
+    return '';
+  }
+  return unsafeString
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
  * Builds the HTML for the universal content generator page.
  * @returns {string} The HTML content.
  */
