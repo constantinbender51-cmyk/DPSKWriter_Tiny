@@ -85,7 +85,18 @@ function buildKeywordPage() {
       body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 700px; }
       input[type=text], input[type=number] { width: 100%; padding: .5rem; margin-top: .25rem; }
       button { padding: .75rem 1.5rem; margin-top: 1rem; }
-      #spinner { display: none; }
+      #progress-container {
+        margin-top: 1.5rem;
+      }
+      #progress-text {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 0.5rem;
+      }
+      #progress-bar {
+        width: 100%;
+        height: 20px;
+      }
       #downloads { margin-top: 1rem; font-weight: bold; }
     </style>
   </head>
@@ -99,40 +110,119 @@ function buildKeywordPage() {
       <input type="number" name="chapters" min="3" max="15" value="8" required/>
       <br/>
       <button type="submit">Generate book</button>
-      <span id="spinner">⏳ Creating…</span>
     </form>
+    <div id="progress-container" style="display: none;">
+      <div id="progress-text"></div>
+      <progress id="progress-bar" value="0" max="100"></progress>
+    </div>
     <div id="downloads"></div>
     <hr>
     <p><a href="/">← Back to universal generator</a></p>
 
     <script>
-      document.getElementById('kwForm').addEventListener('submit', async (e) => {
+      const form = document.getElementById('kwForm');
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      const downloads = document.getElementById('downloads');
+
+      // Helper function to update the progress bar and text
+      function updateProgress(message, value) {
+        progressContainer.style.display = 'block';
+        progressText.innerText = message;
+        progressBar.value = value;
+      }
+
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        document.getElementById('spinner').style.display = 'inline';
-        document.getElementById('downloads').innerHTML = '';
+        
+        downloads.innerHTML = '';
+        form.querySelector('button').disabled = true;
+
         const fd = new FormData(e.target);
         const payload = {
           keywords: fd.get('keywords'),
           chapters: fd.get('chapters')
         };
-        const res = await fetch('/generate-book', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        document.getElementById('spinner').style.display = 'none';
-        if (res.ok) {
-          const { slug } = await res.json();
-          const d = document.getElementById('downloads');
-          d.innerHTML =
+        const chapterCount = parseInt(payload.chapters, 10);
+        let bookOverview = '';
+        let chapterOutline = [];
+        const generatedChapters = [];
+
+        try {
+          // Step 1: Generating overview (10% progress)
+          updateProgress('Step 1/3: Generating book overview...', 10);
+          const overviewRes = await fetch('/generate-book-overview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!overviewRes.ok) throw new Error('Overview generation failed.');
+          const overviewData = await overviewRes.json();
+          bookOverview = overviewData.overview;
+
+          // Step 2: Creating outline (30% progress)
+          updateProgress('Step 2/3: Creating chapter outlines...', 30);
+          const outlineRes = await fetch('/generate-book-outline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ overview: bookOverview, chapters: chapterCount })
+          });
+          if (!outlineRes.ok) throw new Error('Outline generation failed.');
+          const outlineData = await outlineRes.json();
+          chapterOutline = outlineData.outline;
+          
+          // Step 3: Writing chapters (30-100% progress)
+          for (let i = 0; i < chapterOutline.length; i++) {
+            const currentProgress = 30 + (i / chapterOutline.length) * 70;
+            updateProgress(\`Step 3/3: Writing chapter \${i + 1} of \${chapterCount}...\`, currentProgress);
+
+            const chapterRes = await fetch('/generate-chapter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                overview: bookOverview, 
+                chapterMeta: chapterOutline[i], 
+                idx: i + 1, 
+                total: chapterCount 
+              })
+            });
+            if (!chapterRes.ok) throw new Error('Chapter generation failed.');
+            const chapterData = await chapterRes.json();
+            
+            const words = (chapterData.content || '').split(/\\s+/).filter(Boolean).length;
+            updateProgress(\`Step 3/3: Writing chapter \${i + 1} of \${chapterCount}... (\${words} words)\`, currentProgress + (1/chapterOutline.length) * 70);
+            generatedChapters.push(chapterData.content);
+          }
+          
+          // Final Step: Assemble and store book (100% progress)
+          updateProgress('Complete! Assembling book...', 100);
+          const assembleRes = await fetch('/assemble-book', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              overview: bookOverview, 
+              outline: chapterOutline, 
+              chaptersRaw: generatedChapters, 
+              keywords: payload.keywords 
+            })
+          });
+          if (!assembleRes.ok) throw new Error('Book assembly failed.');
+          const finalData = await assembleRes.json();
+          const slug = finalData.slug;
+          
+          downloads.innerHTML =
             '<p>Ready! Download:</p>' +
             '<ul>' +
             '<li><a href="/download/' + slug + '.md">Full book (' + slug + '.md)</a></li>' +
             '<li><a href="/download/' + slug + '-overview.md">Overview only</a></li>' +
             '<li><a href="/download/' + slug + '-outline.json">Raw outline (JSON)</a></li>' +
             '</ul>';
-        } else {
-          document.getElementById('downloads').innerText = 'Generation failed – try again.';
+        } catch (error) {
+          updateProgress(\`Error: \${error.message}\`, 0);
+          console.error('Fetch error:', error);
+        } finally {
+          form.querySelector('button').disabled = false;
         }
       });
     </script>
